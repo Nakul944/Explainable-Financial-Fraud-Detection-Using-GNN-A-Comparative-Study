@@ -1,0 +1,47 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+.env.*
+.streamlit/secrets.toml
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Microsoft Office temporary files
+~$*.docx
+~$*.xlsx
+~$*.pptx
+
+# Python build files
+build/
+dist/
+*.egg-info/
+
+# Large Elliptic raw feature dataset
+Datasets/Elliptic_Bitcoin/elliptic_txs_features.csv
+
+# Large processed graph
+data/processed/elliptic_graph.pt
