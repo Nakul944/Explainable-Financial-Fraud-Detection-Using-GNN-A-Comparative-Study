@@ -53,7 +53,12 @@ def create_local_network(
             elif target in direct_neighbors:
                 second_hop_nodes.add(source)
 
-    all_nodes = {selected_node} | direct_neighbors | second_hop_nodes
+    # Every endpoint of every displayed edge must be registered.
+    all_nodes = {int(selected_node)}
+    
+    for edge in important_edges:
+        all_nodes.add(int(edge["source"]))
+        all_nodes.add(int(edge["target"]))
 
     # -----------------------------------------------------
     # Label helper
