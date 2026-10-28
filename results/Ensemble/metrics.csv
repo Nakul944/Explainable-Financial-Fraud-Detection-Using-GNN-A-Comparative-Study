@@ -1,0 +1,2 @@
+model,accuracy,fraud_precision,fraud_recall,fraud_f1,pr_auc_average_precision,roc_auc
+GraphSAGE+GAT Ensemble,0.9601854993778984,0.6029411764705882,0.4019607843137255,0.4823529411764706,0.4641320113830945,0.8686599447083471

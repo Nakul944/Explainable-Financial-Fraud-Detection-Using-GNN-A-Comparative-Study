@@ -1,0 +1,44 @@
+{
+  "experiment": "GraphSAGE_GAT_probability_ensemble",
+  "dataset": "Elliptic Bitcoin",
+  "seed": 42,
+  "selection_split": "validation",
+  "alpha_graphsage": 1.0,
+  "alpha_gat": 0.0,
+  "threshold": 0.82,
+  "test_metrics": {
+    "accuracy": 0.9601854993778984,
+    "fraud_precision": 0.6029411764705882,
+    "fraud_recall": 0.4019607843137255,
+    "fraud_f1": 0.4823529411764706,
+    "pr_auc_average_precision": 0.4641320113830945,
+    "roc_auc": 0.8686599447083471
+  },
+  "classification_report": {
+    "Legitimate": {
+      "precision": 0.9715252654918893,
+      "recall": 0.9871931696905016,
+      "f1-score": 0.9792965533466651,
+      "support": 8433.0
+    },
+    "Fraud": {
+      "precision": 0.6029411764705882,
+      "recall": 0.4019607843137255,
+      "f1-score": 0.4823529411764706,
+      "support": 408.0
+    },
+    "accuracy": 0.9601854993778984,
+    "macro avg": {
+      "precision": 0.7872332209812387,
+      "recall": 0.6945769770021135,
+      "f1-score": 0.7308247472615679,
+      "support": 8841.0
+    },
+    "weighted avg": {
+      "precision": 0.954515616320903,
+      "recall": 0.9601854993778984,
+      "f1-score": 0.956363288584145,
+      "support": 8841.0
+    }
+  }
+}
