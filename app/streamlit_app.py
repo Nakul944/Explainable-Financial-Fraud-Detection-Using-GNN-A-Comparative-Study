@@ -335,7 +335,7 @@ elif page == "Transaction Analyzer":
             current = {}
             cache = st.session_state.prediction_cache
             for key, bundle in models.items():
-                found = next((v for ck, v in cache.items() if ck.startswith(f"{GRAPH_PATH.stat().st_mtime_ns}:{GRAPH_PATH.stat().st_size}|{key}|")), None)
+                found = cache.get(key)
                 if found is not None:
                     current[key] = {
                         "predicted_class": int(found["predictions"][node].item()),
