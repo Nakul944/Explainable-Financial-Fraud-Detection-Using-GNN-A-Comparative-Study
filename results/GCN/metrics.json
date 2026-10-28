@@ -1,0 +1,24 @@
+{
+  "model": "GCN",
+  "accuracy": 0.9587150774799231,
+  "fraud_precision": 0.56957928802589,
+  "fraud_recall": 0.43137254901960786,
+  "fraud_f1": 0.4909344490934449,
+  "pr_auc_average_precision": 0.4612660162848583,
+  "roc_auc": 0.8246995347409685,
+  "test_support": 8841,
+  "confusion_matrix_labels": [
+    "Legitimate",
+    "Fraud"
+  ],
+  "confusion_matrix": [
+    [
+      8300,
+      133
+    ],
+    [
+      232,
+      176
+    ]
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "model": "GraphSAGE",
+  "dataset": "Elliptic Bitcoin",
+  "seed": 42,
+  "architecture": {
+    "layers": 2,
+    "hidden_channels": 64,
+    "dropout": 0.5,
+    "aggregation": "mean (PyG SAGEConv default)"
+  },
+  "training": {
+    "epochs": 100,
+    "learning_rate": 0.01,
+    "weight_decay": 0.0005,
+    "checkpoint_selection": "best validation fraud F1",
+    "best_validation_fraud_f1": 0.6181818181818182
+  },
+  "test_metrics": {
+    "accuracy": 0.9483090148173283,
+    "fraud_precision": 0.44208037825059104,
+    "fraud_recall": 0.4583333333333333,
+    "fraud_f1": 0.4500601684717208,
+    "pr_auc_average_precision": 0.4641320113830945,
+    "roc_auc": 0.8686599447083471
+  },
+  "split_sizes": {
+    "train": 29894,
+    "validation": 7829,
+    "test": 8841
+  }
+}

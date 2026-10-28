@@ -48,3 +48,6 @@ data/processed/elliptic_graph.pt
 
 # Temporary diagnostic script
 diagnostic.py
+
+# Trained model checkpoints
+model/*.pt
