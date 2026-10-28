@@ -305,8 +305,9 @@ class ProbabilityEnsembleAdapter(nn.Module):
         threshold_log_odds = torch.log(threshold) - torch.log1p(-threshold)
         probability_log_odds = torch.log(positive_probability) - torch.log1p(-positive_probability)
         positive_logit = probability_log_odds - threshold_log_odds
+        # Preserve the deployed p >= threshold rule for either positive class.
+        # The epsilon breaks exact ties in favor of the configured positive class.
+        positive_logit = positive_logit + torch.finfo(positive_logit.dtype).eps
         if self.positive_class == 1:
-            # Match the deployed decision rule p >= threshold at exact equality.
-            positive_logit = positive_logit + torch.finfo(positive_logit.dtype).eps
             return torch.stack((torch.zeros_like(positive_logit), positive_logit), dim=-1)
         return torch.stack((positive_logit, torch.zeros_like(positive_logit)), dim=-1)
