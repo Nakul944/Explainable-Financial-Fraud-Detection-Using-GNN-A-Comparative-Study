@@ -1147,7 +1147,8 @@ decision for this transaction.
                 top_features = get_top_features(
                     explanation,
                     int(analyzed_node),
-                    top_k=10
+                    top_k=10,
+                    num_nodes=graph_data.num_nodes
                 )
 
                 important_neighbors = (
