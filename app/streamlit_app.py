@@ -255,9 +255,6 @@ def get_explanation(node_index: int, model_key: str, epochs: int) -> dict[str, A
         "visualization_edges": visualization_edges,
         "top_features": top_features,
         "neighbors": neighbors,
-        "prediction": int(models[model_key].model(
-            graph_data.x, graph_data.edge_index
-        )[int(node_index)].argmax().item()) if model_key != "Ensemble" else None,
     }
     st.session_state.explanation_cache[cache_key] = result
     return result
