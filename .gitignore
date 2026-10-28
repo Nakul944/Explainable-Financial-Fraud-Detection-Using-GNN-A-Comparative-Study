@@ -45,3 +45,6 @@ Datasets/Elliptic_Bitcoin/elliptic_txs_features.csv
 
 # Large processed graph
 data/processed/elliptic_graph.pt
+
+# Temporary diagnostic script
+diagnostic.py
