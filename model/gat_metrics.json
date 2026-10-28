@@ -1,0 +1,34 @@
+{
+  "model": "GAT",
+  "dataset": "Elliptic Bitcoin",
+  "seed": 42,
+  "architecture": {
+    "layers": 2,
+    "hidden_channels_per_head": 16,
+    "attention_heads_first_layer": 4,
+    "output_heads": 1,
+    "feature_dropout": 0.5,
+    "attention_dropout": 0.5,
+    "first_layer_output_channels": 64
+  },
+  "training": {
+    "epochs": 100,
+    "learning_rate": 0.01,
+    "weight_decay": 0.0005,
+    "checkpoint_selection": "best validation fraud F1",
+    "best_validation_fraud_f1": 0.3779527559055118
+  },
+  "test_metrics": {
+    "accuracy": 0.7468612147947065,
+    "fraud_precision": 0.10930828351836037,
+    "fraud_recall": 0.6274509803921569,
+    "fraud_f1": 0.18618181818181817,
+    "pr_auc_average_precision": 0.3094230720917584,
+    "roc_auc": 0.8073302130053965
+  },
+  "split_sizes": {
+    "train": 29894,
+    "validation": 7829,
+    "test": 8841
+  }
+}
