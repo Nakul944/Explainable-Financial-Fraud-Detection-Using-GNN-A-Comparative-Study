@@ -82,3 +82,19 @@ def test_probability_ensemble_adapter_respects_threshold():
 def test_create_explainer_contract():
     model = FixedLogitModel([[0.0, 1.0]])
     assert create_explainer(model, epochs=2).model is model
+
+def test_probability_ensemble_adapter_threshold_equality_favors_positive_class():
+    x = torch.zeros((1, 1))
+    edge_index = torch.tensor([[0], [0]])
+    # A zero-logit model predicts probability 0.5, exactly the selected threshold.
+    model = FixedLogitModel([[0.0, 0.0]])
+
+    positive_one = ProbabilityEnsembleAdapter(
+        [model], weights=[1.0], threshold=0.5, positive_class=1
+    )
+    positive_zero = ProbabilityEnsembleAdapter(
+        [model], weights=[1.0], threshold=0.5, positive_class=0
+    )
+
+    assert positive_one(x, edge_index).argmax(dim=1).item() == 1
+    assert positive_zero(x, edge_index).argmax(dim=1).item() == 0
