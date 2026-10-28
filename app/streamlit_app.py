@@ -57,19 +57,225 @@ CLASS_LABELS = {0: "Legitimate", 1: "Fraud / illicit"}
 st.markdown(
     """
 <style>
-.stApp { background: radial-gradient(circle at top right, rgba(34,197,94,.07), transparent 28%), #070B12; color:#E2E8F0; }
-.block-container { max-width: 1500px; padding-top: 1.5rem; padding-bottom: 3rem; }
-section[data-testid="stSidebar"] { background: linear-gradient(180deg,#0B111B,#080D15); border-right:1px solid #1E293B; }
-h1,h2,h3 { letter-spacing:-.025em; }
-[data-testid="stMetric"] { background:linear-gradient(145deg,#111827,#0A101B); border:1px solid #1E293B; padding:15px; border-radius:14px; }
-div[data-testid="stVerticalBlockBorderWrapper"] { border-color:#233047; border-radius:16px; }
-.stButton button { border-radius:10px; min-height:42px; font-weight:600; }
-.gs-kicker { color:#4ADE80; font-weight:700; text-transform:uppercase; letter-spacing:.14em; font-size:.72rem; }
-.gs-subtitle { color:#94A3B8; margin-top:-.5rem; margin-bottom:1.25rem; }
-.gs-card { background:linear-gradient(145deg,#111827,#0A101B); border:1px solid #1E293B; border-radius:16px; padding:20px; height:100%; }
-.gs-muted { color:#94A3B8; font-size:.9rem; }
-.gs-good { color:#4ADE80; }
-.gs-warning { color:#FBBF24; }
+:root {
+    --gs-bg: #070B12;
+    --gs-panel: #0B1220;
+    --gs-panel-raised: #111827;
+    --gs-border: #243247;
+    --gs-border-bright: #315344;
+    --gs-text: #E2E8F0;
+    --gs-muted: #94A3B8;
+    --gs-green: #4ADE80;
+    --gs-green-strong: #22C55E;
+    --gs-blue: #38BDF8;
+    --gs-amber: #FBBF24;
+}
+.stApp {
+    background:
+        radial-gradient(ellipse at 92% 0%, rgba(34,197,94,.10), transparent 31%),
+        radial-gradient(ellipse at 0% 35%, rgba(56,189,248,.045), transparent 27%),
+        var(--gs-bg);
+    color: var(--gs-text);
+}
+.block-container {
+    width: 100%;
+    max-width: 1500px;
+    padding: 1.6rem clamp(1.25rem, 3vw, 2.6rem) 3.2rem;
+}
+#MainMenu, footer { visibility: hidden; }
+header { background: transparent; }
+h1, h2, h3, h4 {
+    color: #F8FAFC;
+    letter-spacing: -.035em;
+}
+h1 {
+    font-weight: 800;
+    letter-spacing: -.045em;
+    line-height: 1.08;
+    margin-bottom: .35rem;
+}
+h2 { font-weight: 750; margin-top: 1.3rem; }
+h3 {
+    font-size: 1.28rem;
+    font-weight: 750;
+    margin-top: 1.15rem;
+    margin-bottom: .8rem;
+}
+h4 { font-weight: 700; }
+p, [data-testid="stMarkdownContainer"] p { line-height: 1.62; }
+.gs-kicker {
+    color: var(--gs-green);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .16em;
+    font-size: .70rem;
+    margin-bottom: .45rem;
+}
+.gs-subtitle {
+    color: var(--gs-muted);
+    font-size: .98rem;
+    line-height: 1.6;
+    max-width: 920px;
+    margin-top: -.15rem;
+    margin-bottom: 1.6rem;
+}
+.gs-card {
+    background: linear-gradient(145deg, #111B2A, #0A101B);
+    border: 1px solid var(--gs-border);
+    border-radius: 16px;
+    padding: 20px;
+    height: 100%;
+    box-shadow: 0 8px 28px rgba(0,0,0,.16);
+}
+.gs-muted { color: var(--gs-muted); font-size: .9rem; }
+.gs-good { color: var(--gs-green); }
+.gs-warning { color: var(--gs-amber); }
+
+/* Keep sibling columns and their card surfaces aligned. */
+div[data-testid="stHorizontalBlock"] {
+    align-items: stretch;
+    gap: 1rem;
+}
+div[data-testid="column"] {
+    min-width: 0;
+}
+div[data-testid="column"] > div[data-testid="stVerticalBlock"] {
+    height: 100%;
+}
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    box-sizing: border-box;
+    min-height: 218px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(145deg, rgba(17,24,39,.96), rgba(9,15,25,.98));
+    border: 1px solid var(--gs-border);
+    border-radius: 16px;
+    padding: 1.05rem 1.1rem;
+    box-shadow: 0 8px 28px rgba(0,0,0,.16);
+    transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+    border-color: var(--gs-border-bright);
+    box-shadow: 0 12px 32px rgba(0,0,0,.24);
+    transform: translateY(-2px);
+}
+div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stVerticalBlock"] {
+    flex: 1 1 auto;
+    height: 100%;
+}
+
+/* Uniform, clearly separated metric surfaces. */
+[data-testid="stMetric"] {
+    box-sizing: border-box;
+    min-height: 104px;
+    height: 100%;
+    background: linear-gradient(145deg, #111C2C, #0A111D);
+    border: 1px solid #26364B;
+    border-radius: 14px;
+    padding: 14px 16px;
+    gap: .3rem;
+}
+[data-testid="stMetricLabel"] {
+    color: #A7B5C8;
+    font-size: .78rem;
+    font-weight: 650;
+}
+[data-testid="stMetricValue"] {
+    color: #F8FAFC;
+    font-weight: 800;
+    letter-spacing: -.035em;
+}
+[data-testid="stMetricDelta"] { font-size: .78rem; }
+
+/* Consistent control sizing, contrast and interaction feedback. */
+.stButton > button, .stDownloadButton > button {
+    min-height: 44px;
+    border-radius: 11px;
+    font-weight: 700;
+    border: 1px solid #304158;
+    transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+.stButton > button:hover, .stDownloadButton > button:hover {
+    border-color: var(--gs-green);
+    transform: translateY(-1px);
+}
+.stButton > button[kind="primary"] {
+    background: linear-gradient(110deg, #15803D, #16A34A);
+    border: 1px solid #22C55E;
+    color: #F0FDF4;
+}
+.stButton > button[kind="primary"]:hover {
+    background: linear-gradient(110deg, #166534, #15803D);
+    border-color: #86EFAC;
+}
+div[data-baseweb="input"] > div,
+div[data-baseweb="select"] > div,
+div[data-baseweb="textarea"] {
+    background: #0B1220;
+    border-color: #334155;
+    border-radius: 10px;
+}
+div[data-baseweb="input"] > div:focus-within,
+div[data-baseweb="select"] > div:focus-within,
+div[data-baseweb="textarea"]:focus-within {
+    border-color: var(--gs-green);
+    box-shadow: 0 0 0 1px rgba(74,222,128,.22);
+}
+.stSlider [data-baseweb="slider"] { padding-top: .45rem; }
+
+/* Sidebar navigation mirrors the original GraphShield dark/green identity. */
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0B111B 0%, #080D15 100%);
+    border-right: 1px solid #1E293B;
+}
+section[data-testid="stSidebar"] > div {
+    padding-top: 1.4rem;
+}
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {
+    color: #F8FAFC;
+    letter-spacing: -.04em;
+}
+section[data-testid="stSidebar"] [data-testid="stRadio"] label {
+    border-radius: 10px;
+}
+section[data-testid="stSidebar"] [data-testid="stRadio"] label:hover {
+    color: var(--gs-green);
+}
+section[data-testid="stSidebar"] hr {
+    border-color: #223047;
+    margin: 1rem 0;
+}
+
+/* Tables, progress and status elements use the same restrained palette. */
+[data-testid="stDataFrame"], [data-testid="stTable"] {
+    border: 1px solid #243247;
+    border-radius: 12px;
+    overflow: hidden;
+}
+[data-testid="stProgressBar"] > div > div {
+    background: linear-gradient(90deg, #16A34A, #4ADE80);
+}
+[data-testid="stAlert"] { border-radius: 12px; }
+[data-testid="stExpander"] {
+    border: 1px solid #243247;
+    border-radius: 12px;
+    background: rgba(11,18,32,.55);
+}
+hr { border-color: #223047; }
+small, .stCaption { color: var(--gs-muted); }
+
+/* Reduce padding and card height on narrower screens without clipping content. */
+@media (max-width: 900px) {
+    .block-container { padding: 1.1rem 1rem 2.4rem; }
+    div[data-testid="stVerticalBlockBorderWrapper"] { min-height: 200px; }
+}
+@media (max-width: 600px) {
+    .block-container { padding-left: .75rem; padding-right: .75rem; }
+    h1 { font-size: 2rem; }
+    div[data-testid="stVerticalBlockBorderWrapper"] { padding: .9rem; min-height: 180px; }
+    [data-testid="stMetric"] { padding: 12px; min-height: 94px; }
+}
 </style>
 """,
     unsafe_allow_html=True,
