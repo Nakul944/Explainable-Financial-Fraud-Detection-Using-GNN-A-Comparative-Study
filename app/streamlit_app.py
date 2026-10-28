@@ -1,1651 +1,553 @@
+from __future__ import annotations
+
+import json
 from pathlib import Path
+from typing import Any
 
-import streamlit as st
 import pandas as pd
-import numpy as np
+import streamlit as st
 import torch
-
-from model_utils import (
-    load_graph,
-    load_model,
-    get_predictions,
-    analyze_node
-)
-
-from explainer_utils import (
-    create_explainer,
-    explain_node,
-    get_top_edges,
-    get_top_features,
-    get_important_neighbors,
-    get_visualization_edges
-)
-
 import streamlit.components.v1 as components
 
-from visualization import (
-    create_local_network
-)
+try:
+    from .model_registry import load_model_registry, predict_graph
+    from .results_loader import available_artifacts, load_recorded_metrics
+    from .explainer_utils import (
+        create_explainer,
+        explain_node,
+        get_important_neighbors,
+        get_top_edges,
+        get_top_features,
+        get_visualization_edges,
+    )
+    from .visualization import create_local_network
+except ImportError:  # supports: streamlit run app/streamlit_app.py
+    from model_registry import load_model_registry, predict_graph
+    from results_loader import available_artifacts, load_recorded_metrics
+    from explainer_utils import (
+        create_explainer,
+        explain_node,
+        get_important_neighbors,
+        get_top_edges,
+        get_top_features,
+        get_visualization_edges,
+    )
+    from visualization import create_local_network
 
-
-# =========================================================
-# PAGE CONFIG
-# =========================================================
 
 st.set_page_config(
-    page_title="GraphShield | Fraud Detection",
+    page_title="GraphShield | Explainable Fraud Detection",
     page_icon="🛡️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
-
-
-# =========================================================
-# PROJECT PATHS
-# =========================================================
 
 APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = APP_DIR.parent
-
-MODEL_PATH = (
-    PROJECT_ROOT
-    / "model"
-    / "best_gcn_model.pt"
-)
-
-GRAPH_PATH = (
-    PROJECT_ROOT
-    / "data"
-    / "processed"
-    / "elliptic_graph.pt"
-)
-
-SCALER_PATH = (
-    PROJECT_ROOT
-    / "data"
-    / "processed"
-    / "scaler.pkl"
-)
-
-CLASSES_PATH = (
-    PROJECT_ROOT
-    / "Datasets"
-    / "Elliptic_Bitcoin"
-    / "elliptic_txs_classes.csv"
-)
-
-EDGES_PATH = (
-    PROJECT_ROOT
-    / "Datasets"
-    / "Elliptic_Bitcoin"
-    / "elliptic_txs_edgelist.csv"
-)
-
-FEATURES_PATH = (
-    PROJECT_ROOT
-    / "Datasets"
-    / "Elliptic_Bitcoin"
-    / "elliptic_txs_features.csv"
-)
-
-
-# =========================================================
-# CSS
-# =========================================================
+GRAPH_PATH = PROJECT_ROOT / "data" / "processed" / "elliptic_graph.pt"
+MODEL_ORDER = ["GCN", "GraphSAGE", "GAT", "Ensemble"]
+MODEL_LABELS = {
+    "GCN": "GCN",
+    "GraphSAGE": "GraphSAGE",
+    "GAT": "GAT",
+    "Ensemble": "GraphSAGE–GAT Ensemble",
+}
+CLASS_LABELS = {0: "Legitimate", 1: "Fraud / illicit"}
 
 st.markdown(
     """
 <style>
-
-.stApp {
-    background:
-        radial-gradient(
-            circle at top right,
-            rgba(34, 197, 94, 0.06),
-            transparent 25%
-        ),
-        #070B12;
-}
-
-.block-container {
-    padding-top: 2rem;
-    padding-bottom: 3rem;
-    max-width: 1450px;
-}
-
-#MainMenu {
-    visibility: hidden;
-}
-
-footer {
-    visibility: hidden;
-}
-
-header {
-    background-color: transparent;
-}
-
-.main-title {
-    font-size: 2.8rem;
-    font-weight: 800;
-    color: #F8FAFC;
-    margin-bottom: 4px;
-    letter-spacing: -1px;
-}
-
-.main-subtitle {
-    color: #94A3B8;
-    font-size: 1rem;
-    margin-bottom: 22px;
-}
-
-.green-text {
-    color: #22C55E;
-}
-
-.tech-badge {
-    display: inline-block;
-    background-color: #0F1F17;
-    color: #4ADE80;
-    border: 1px solid #1B5E35;
-    padding: 6px 12px;
-    margin-right: 7px;
-    margin-bottom: 5px;
-    border-radius: 20px;
-    font-size: 0.75rem;
-    font-weight: 600;
-}
-
-.section-title {
-    color: #F1F5F9;
-    font-size: 1.35rem;
-    font-weight: 700;
-    margin-top: 18px;
-    margin-bottom: 15px;
-}
-
-.dashboard-card {
-    background:
-        linear-gradient(
-            145deg,
-            #111827,
-            #0A101B
-        );
-
-    border: 1px solid #1E293B;
-    border-radius: 16px;
-
-    padding: 22px;
-
-    height: 200px;
-    box-sizing: border-box;
-
-    display: flex;
-    flex-direction: column;
-
-    overflow: hidden;
-
-    box-shadow:
-        0 8px 30px
-        rgba(0, 0, 0, 0.22);
-
-    transition:
-        transform 0.2s ease,
-        border-color 0.2s ease;
-}
-
-.dashboard-card:hover {
-    transform: translateY(-3px);
-    border-color: #256B43;
-}
-
-.card-icon {
-    font-size: 1.6rem;
-    color: #22C55E;
-    margin-bottom: 8px;
-    line-height: 1;
-}
-
-.card-label {
-    color: #94A3B8;
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.8px;
-    margin-bottom: 7px;
-}
-
-.card-number {
-    color: #F8FAFC;
-    font-size: 1.9rem;
-    font-weight: 800;
-    line-height: 1.15;
-    margin-bottom: 10px;
-}
-
-.card-detail {
-    color: #64748B;
-    font-size: 0.78rem;
-    line-height: 1.45;
-    margin-top: auto;
-    white-space: normal;
-    overflow-wrap: break-word;
-    word-break: normal;
-}
-
-.analyzer-panel {
-    background:
-        linear-gradient(
-            120deg,
-            #0F172A,
-            #0B1220
-        );
-
-    border: 1px solid #1E293B;
-
-    border-radius: 16px;
-
-    padding: 22px;
-
-    margin-top: 10px;
-    margin-bottom: 20px;
-
-    color: #CBD5E1;
-    line-height: 1.6;
-}
-
-.status-pill {
-    display: inline-block;
-    background-color: #102719;
-    color: #4ADE80;
-    border: 1px solid #1B5E35;
-    padding: 5px 10px;
-    border-radius: 20px;
-    font-size: 0.75rem;
-}
-
-div[data-testid="stMetric"] {
-    background-color: #0F172A;
-    border: 1px solid #1E293B;
-    padding: 16px;
-    border-radius: 12px;
-}
-
-section[data-testid="stSidebar"] {
-    background:
-        linear-gradient(
-            180deg,
-            #0B111B,
-            #080D15
-        );
-
-    border-right: 1px solid #172033;
-}
-
-div.stButton > button {
-    border-radius: 10px;
-    font-weight: 600;
-    min-height: 44px;
-}
-
+.stApp { background: radial-gradient(circle at top right, rgba(34,197,94,.07), transparent 28%), #070B12; color:#E2E8F0; }
+.block-container { max-width: 1500px; padding-top: 1.5rem; padding-bottom: 3rem; }
+section[data-testid="stSidebar"] { background: linear-gradient(180deg,#0B111B,#080D15); border-right:1px solid #1E293B; }
+h1,h2,h3 { letter-spacing:-.025em; }
+[data-testid="stMetric"] { background:linear-gradient(145deg,#111827,#0A101B); border:1px solid #1E293B; padding:15px; border-radius:14px; }
+div[data-testid="stVerticalBlockBorderWrapper"] { border-color:#233047; border-radius:16px; }
+.stButton button { border-radius:10px; min-height:42px; font-weight:600; }
+.gs-kicker { color:#4ADE80; font-weight:700; text-transform:uppercase; letter-spacing:.14em; font-size:.72rem; }
+.gs-subtitle { color:#94A3B8; margin-top:-.5rem; margin-bottom:1.25rem; }
+.gs-card { background:linear-gradient(145deg,#111827,#0A101B); border:1px solid #1E293B; border-radius:16px; padding:20px; height:100%; }
+.gs-muted { color:#94A3B8; font-size:.9rem; }
+.gs-good { color:#4ADE80; }
+.gs-warning { color:#FBBF24; }
 </style>
-    """,
-    unsafe_allow_html=True
+""",
+    unsafe_allow_html=True,
 )
 
 
-# =========================================================
-# LOAD MODEL / GRAPH
-# =========================================================
-
-@st.cache_resource
-def initialize_system():
-
-    graph_data = load_graph(
-        GRAPH_PATH
-    )
-
-    model = load_model(
-        MODEL_PATH,
-        graph_data
-    )
-
-    logits, probabilities, predictions = (
-        get_predictions(
-            model,
-            graph_data
-        )
-    )
-
-    return (
-        graph_data,
-        model,
-        logits,
-        probabilities,
-        predictions
-    )
-
-
-@st.cache_resource
-def initialize_explainer(_model):
-
-    return create_explainer(
-        _model
-    )
-
-
-try:
-
-    (
-        graph_data,
-        model,
-        logits,
-        probabilities,
-        predictions
-    ) = initialize_system()
-
-    explainer = initialize_explainer(
-        model
-    )
-
-    model_loaded = True
-    model_error = None
-
-except Exception as e:
-
+@st.cache_resource(show_spinner="Loading graph, model checkpoints, and recorded metrics…")
+def initialize_system(graph_path_text: str, project_root_text: str):
+    graph_path = Path(graph_path_text)
+    project_root = Path(project_root_text)
     graph_data = None
-    model = None
-    logits = None
-    probabilities = None
-    predictions = None
-    explainer = None
+    model_registry: dict[str, Any] = {}
+    model_errors: dict[str, str] = {}
+    system_error = None
+    metrics, metrics_errors = load_recorded_metrics(project_root)
 
-    model_loaded = False
-    model_error = str(e)
+    if not graph_path.is_file():
+        system_error = (
+            f"Processed graph not found at {graph_path}. "
+            "The app expects data/processed/elliptic_graph.pt. "
+            "If you currently have elliptic_graph.zip, use the project's existing "
+            "preprocessing/export workflow to create the .pt file; this app will not "
+            "silently unpack or replace research data."
+        )
+        return graph_data, model_registry, model_errors, metrics, metrics_errors, system_error
 
-
-# =========================================================
-# GRAPH STATS
-# =========================================================
-
-if model_loaded:
-
-    NUM_NODES = graph_data.num_nodes
-    NUM_EDGES = graph_data.edge_index.shape[1]
-
-else:
-
-    NUM_NODES = 0
-    NUM_EDGES = 0
-
-
-# =========================================================
-# SESSION STATE
-# =========================================================
-
-if "analysis_result" not in st.session_state:
-    st.session_state.analysis_result = None
-
-if "analyzed_node" not in st.session_state:
-    st.session_state.analyzed_node = None
-
-if "explanation_result" not in st.session_state:
-    st.session_state.explanation_result = None
+    try:
+        try:
+            graph_data = torch.load(graph_path, map_location="cpu", weights_only=False)
+        except TypeError:
+            graph_data = torch.load(graph_path, map_location="cpu")
+        if not hasattr(graph_data, "x") or not hasattr(graph_data, "edge_index"):
+            raise ValueError("Processed graph must contain x and edge_index tensors.")
+        if graph_data.x.dim() != 2 or graph_data.edge_index.dim() != 2:
+            raise ValueError("Unexpected graph tensor dimensions.")
+        model_registry, model_errors = load_model_registry(graph_data, project_root)
+    except Exception as exc:
+        system_error = f"{type(exc).__name__}: {exc}"
+    return graph_data, model_registry, model_errors, metrics, metrics_errors, system_error
 
 
-# =========================================================
-# SIDEBAR
-# =========================================================
+(
+    graph_data,
+    models,
+    model_errors,
+    recorded_metrics,
+    metrics_errors,
+    system_error,
+) = initialize_system(str(GRAPH_PATH), str(PROJECT_ROOT))
+
+if "prediction_cache" not in st.session_state:
+    st.session_state.prediction_cache = {}
+if "analysis_node" not in st.session_state:
+    st.session_state.analysis_node = None
+if "explanation_cache" not in st.session_state:
+    st.session_state.explanation_cache = {}
+if "explainer_cache" not in st.session_state:
+    st.session_state.explainer_cache = {}
 
 with st.sidebar:
-
-    st.markdown(
-        """
-<h2 style="color:#F8FAFC; margin-bottom:0;">
-🛡️ GraphShield
-</h2>
-
-<p style="
-    color:#64748B;
-    font-size:0.80rem;
-    margin-top:3px;
-">
-Financial Fraud Intelligence
-</p>
-        """,
-        unsafe_allow_html=True
-    )
-
+    st.markdown("## 🛡️ GraphShield")
+    st.caption("Explainable financial fraud intelligence")
     st.divider()
-
     page = st.radio(
-        "Navigation",
-        [
-            "Overview",
-            "Transaction Analyzer",
-            "Model Performance",
-            "Explainability"
-        ]
+        "Workspace",
+        ["Overview", "Transaction Analyzer", "Model Performance", "Explainability"],
+        label_visibility="collapsed",
     )
-
     st.divider()
-
-    st.markdown("##### System Status")
-
-    if model_loaded:
-
-        st.success(
-            "● GCN Model Ready"
-        )
-
-    else:
-
-        st.error(
-            "● Model Loading Failed"
-        )
-
-        with st.expander(
-            "View Error"
-        ):
-            st.code(
-                model_error
-            )
-
-    st.caption(
-        "Dataset: Elliptic Bitcoin Transaction Dataset"
-    )
-
-    st.caption(
-        "Model: Graph Convolutional Network"
-    )
-
-    st.caption(
-        "Explainability: GNNExplainer"
-    )
-
+    st.markdown("#### Runtime status")
+    if graph_data is not None:
+        st.success(f"Graph loaded · {int(graph_data.num_nodes):,} nodes")
+    elif system_error:
+        st.error("Graph unavailable")
+    for key in MODEL_ORDER:
+        if key in models:
+            st.caption(f"🟢 {MODEL_LABELS[key]} ready")
+        else:
+            st.caption(f"⚪ {MODEL_LABELS[key]} unavailable")
     st.divider()
+    st.caption("Dataset: Elliptic Bitcoin")
+    st.caption("Explanations: GNNExplainer")
+    st.caption("Recorded results are separate from live predictions.")
 
-    st.markdown(
-        """
-<span class="status-pill">
-● System Online
-</span>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-# =========================================================
-# HEADER
-# =========================================================
-
+st.markdown('<div class="gs-kicker">Graph intelligence · explainable AI</div>', unsafe_allow_html=True)
+st.title("GraphShield")
 st.markdown(
-    """
-<div class="main-title">
-    Explainable Financial
-    <span class="green-text">
-        Fraud Detection
-    </span>
-</div>
-
-<div class="main-subtitle">
-    Graph-based blockchain transaction intelligence powered
-    by Graph Convolutional Networks and GNNExplainer.
-</div>
-
-<span class="tech-badge">
-GCN
-</span>
-
-<span class="tech-badge">
-PyTorch Geometric
-</span>
-
-<span class="tech-badge">
-GNNExplainer
-</span>
-
-<span class="tech-badge">
-Elliptic Dataset
-</span>
-    """,
-    unsafe_allow_html=True
+    '<div class="gs-subtitle">Explore transaction predictions, compare graph neural networks, and inspect the local evidence behind model decisions.</div>',
+    unsafe_allow_html=True,
 )
 
-st.write("")
+if system_error:
+    st.error("The transaction graph could not be initialized.")
+    st.code(system_error)
+    st.info("Recorded experiment metrics may still be available below, but live predictions and explanations require the processed graph.")
+
+if model_errors:
+    with st.expander("Model loading details", expanded=False):
+        for key, error in model_errors.items():
+            st.warning(f"{MODEL_LABELS.get(key, key)}: {error}")
 
 
-# =========================================================
-# OVERVIEW
-# =========================================================
+def metric_value(metrics: dict[str, Any], key: str) -> str:
+    value = metrics.get(key)
+    return "Unavailable" if value is None else f"{value:.4f}"
+
+
+def recorded_frame(metrics_by_model: dict[str, dict[str, Any]]) -> pd.DataFrame:
+    rows = []
+    for key in MODEL_ORDER:
+        if key not in metrics_by_model:
+            continue
+        m = metrics_by_model[key]
+        rows.append({
+            "Model": MODEL_LABELS[key],
+            "Accuracy": m.get("accuracy"),
+            "Fraud precision": m.get("fraud_precision"),
+            "Fraud recall": m.get("fraud_recall"),
+            "Fraud F1": m.get("fraud_f1"),
+            "PR-AUC (AP)": m.get("pr_auc_average_precision"),
+            "ROC-AUC": m.get("roc_auc"),
+        })
+    return pd.DataFrame(rows)
+
+
+def get_prediction_cache(key: str) -> dict[str, Any] | None:
+    return st.session_state.prediction_cache.get(key)
+
+
+def run_model_predictions(node_index: int) -> dict[str, Any]:
+    if graph_data is None:
+        raise RuntimeError("The processed graph is not loaded.")
+    if not 0 <= int(node_index) < int(graph_data.num_nodes):
+        raise ValueError(f"Node index must be between 0 and {int(graph_data.num_nodes) - 1}.")
+    cache = st.session_state.prediction_cache
+    # Cache key includes graph file identity and model checkpoint identity.
+    graph_stamp = f"{GRAPH_PATH.stat().st_mtime_ns}:{GRAPH_PATH.stat().st_size}"
+    for key, bundle in models.items():
+        checkpoint = bundle.checkpoint_path
+        stamp = f"{checkpoint}:{checkpoint.stat().st_mtime_ns if checkpoint.is_file() else 'missing'}"
+        cache_key = f"{graph_stamp}|{key}|{stamp}"
+        if cache_key not in cache:
+            cache[cache_key] = predict_graph(bundle, graph_data)
+        cache[key] = cache[cache_key]
+    return {
+        key: {
+            "node_index": int(node_index),
+            "predicted_class": int(cache[key]["predictions"][node_index].item()),
+            "fraud_probability": float(cache[key]["fraud_probability"][node_index].item()),
+            "legitimate_probability": float(cache[key]["probabilities"][node_index, 0].item()),
+            "probabilities": cache[key]["probabilities"][node_index].tolist(),
+            "threshold": float(bundle.threshold),
+        }
+        for key, bundle in models.items()
+    }
+
+
+def get_explanation(node_index: int, model_key: str, epochs: int) -> dict[str, Any]:
+    if graph_data is None:
+        raise RuntimeError("The processed graph is not loaded.")
+    if model_key not in models:
+        raise RuntimeError(f"{MODEL_LABELS.get(model_key, model_key)} is not available.")
+    cache_key = f"{GRAPH_PATH.stat().st_mtime_ns}:{node_index}:{model_key}:{epochs}"
+    if cache_key in st.session_state.explanation_cache:
+        return st.session_state.explanation_cache[cache_key]
+
+    bundle = models[model_key]
+    explainer_key = f"{model_key}:{epochs}"
+    if explainer_key not in st.session_state.explainer_cache:
+        st.session_state.explainer_cache[explainer_key] = create_explainer(bundle.model, epochs=epochs)
+    explainer = st.session_state.explainer_cache[explainer_key]
+    explanation = explain_node(explainer, graph_data, int(node_index))
+    top_edges = get_top_edges(explanation, graph_data.edge_index, top_k=30)
+    visualization_edges = get_visualization_edges(
+        explanation, graph_data.edge_index, selected_node=int(node_index), direct_k=8, additional_k=12
+    )
+    top_features = get_top_features(
+        explanation, int(node_index), top_k=20, num_nodes=int(graph_data.num_nodes)
+    )
+    neighbors = get_important_neighbors(int(node_index), top_edges, graph_data, top_k=8)
+    result = {
+        "top_edges": top_edges,
+        "visualization_edges": visualization_edges,
+        "top_features": top_features,
+        "neighbors": neighbors,
+    }
+    st.session_state.explanation_cache[cache_key] = result
+    return result
+
 
 if page == "Overview":
-
-    st.markdown(
-        '<div class="section-title">System Overview</div>',
-        unsafe_allow_html=True
+    st.markdown("### Project overview")
+    st.write(
+        "GraphShield is a research dashboard for transaction-level illicit activity detection on the "
+        "Elliptic Bitcoin graph. It combines graph neural network predictions with local GNNExplainer "
+        "evidence so users can compare model behavior rather than relying on accuracy alone."
     )
+    if graph_data is not None:
+        n1, n2, n3, n4 = st.columns(4)
+        n1.metric("Transaction nodes", f"{int(graph_data.num_nodes):,}")
+        n2.metric("Directed graph edges", f"{int(graph_data.edge_index.shape[1]):,}")
+        n3.metric("Input features", f"{int(graph_data.x.shape[1]):,}")
+        known = int(((graph_data.y == 0) | (graph_data.y == 1)).sum().item()) if hasattr(graph_data, "y") else None
+        n4.metric("Known labels", f"{known:,}" if known is not None else "Unavailable")
+    st.markdown("### The four model approaches")
+    descriptions = {
+        "GCN": "Learns node representations by aggregating information from graph neighborhoods.",
+        "GraphSAGE": "Uses a learned neighborhood aggregation function to combine node and neighbor information.",
+        "GAT": "Learns attention weights over neighboring nodes during message passing.",
+        "Ensemble": "Uses the recorded validation-selected GraphSAGE/GAT probability weighting and threshold.",
+    }
+    cols = st.columns(4)
+    for col, key in zip(cols, MODEL_ORDER):
+        with col:
+            with st.container(border=True):
+                st.markdown(f"#### {MODEL_LABELS[key]}")
+                st.caption("Runtime checkpoint available" if key in models else "Runtime checkpoint unavailable")
+                st.write(descriptions[key])
+                m = recorded_metrics.get(key)
+                if m:
+                    st.metric("Recorded fraud F1", metric_value(m, "fraud_f1"))
+                else:
+                    st.caption("Recorded metrics unavailable")
+    st.markdown("### Recorded test-set comparison")
+    frame = recorded_frame(recorded_metrics)
+    if not frame.empty:
+        st.dataframe(frame, use_container_width=True, hide_index=True)
+        chart_data = frame.set_index("Model")[["Fraud precision", "Fraud recall", "Fraud F1"]]
+        st.bar_chart(chart_data, use_container_width=True)
+        st.caption("These are recorded evaluation metrics from experiment artifacts, not live predictions for a selected transaction.")
+    else:
+        st.info("No readable metric artifacts were found.")
+    if metrics_errors:
+        with st.expander("Metric artifact availability"):
+            for key, error in metrics_errors.items():
+                st.caption(f"{MODEL_LABELS[key]}: {error}")
 
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-
-        st.markdown(
-            f"""
-<div class="dashboard-card">
-
-<div class="card-icon">
-◉
-</div>
-
-<div class="card-label">
-TRANSACTIONS
-</div>
-
-<div class="card-number">
-{NUM_NODES:,}
-</div>
-
-<div class="card-detail">
-Nodes in the Elliptic transaction graph
-</div>
-
-</div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with col2:
-
-        st.markdown(
-            f"""
-<div class="dashboard-card">
-
-<div class="card-icon">
-⌁
-</div>
-
-<div class="card-label">
-GRAPH EDGES
-</div>
-
-<div class="card-number">
-{NUM_EDGES:,}
-</div>
-
-<div class="card-detail">
-Transaction-to-transaction relationships
-</div>
-
-</div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with col3:
-
-        st.markdown(
-            """
-<div class="dashboard-card">
-
-<div class="card-icon">
-⬡
-</div>
-
-<div class="card-label">
-MODEL
-</div>
-
-<div class="card-number">
-GCN
-</div>
-
-<div class="card-detail">
-Graph Convolutional Network
-</div>
-
-</div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with col4:
-
-        st.markdown(
-            """
-<div class="dashboard-card">
-
-<div class="card-icon">
-✦
-</div>
-
-<div class="card-label">
-EXPLAINABILITY
-</div>
-
-<div class="card-number">
-XAI
-</div>
-
-<div class="card-detail">
-Local explanations using GNNExplainer
-</div>
-
-</div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    st.write("")
-
-    left, right = st.columns(
-        [1.5, 1],
-        gap="large"
-    )
-
-    with left:
-
-        st.markdown(
-            """
-<div class="section-title">
-Fraud Investigation Pipeline
-</div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        st.info(
-            """
-Select a blockchain transaction and allow the GCN to analyze
-both its transaction features and its surrounding graph
-structure.
-
-The prediction can then be interpreted using GNNExplainer
-to identify important neighboring transactions, graph edges,
-and transaction features.
-            """
-        )
-
-    with right:
-
-        st.markdown(
-            """
-<div class="section-title">
-Model Status
-</div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        st.success(
-            "✓ GCN model trained"
-        )
-
-        st.success(
-            "✓ Transaction graph prepared"
-        )
-
-        st.success(
-            "✓ GNNExplainer connected"
-        )
-
-
-# =========================================================
-# TRANSACTION ANALYZER
-# =========================================================
 
 elif page == "Transaction Analyzer":
-
-    st.markdown(
-        """
-<div class="section-title">
-Transaction Investigation
-</div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        """
-<div class="analyzer-panel">
-
-<strong>Investigate a blockchain transaction</strong>
-
-<br><br>
-
-The Graph Convolutional Network analyzes the selected
-transaction using both its transaction features and its
-connections with neighboring transactions.
-
-</div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-    if not model_loaded:
-
-        st.error(
-            "The trained GCN could not be loaded."
-        )
-
-        st.code(
-            model_error
-        )
-
-        st.stop()
-
-
-    # -----------------------------------------------------
-    # INPUT
-    # -----------------------------------------------------
-
-    input_col1, input_col2 = st.columns(
-        [3, 1]
-    )
-
-    with input_col1:
-
-        node_index = st.number_input(
-            "Node Index",
+    st.markdown("### Transaction analyzer")
+    st.write("Enter a graph node index to compare the predictions of every model whose local checkpoint is available.")
+    if graph_data is None:
+        st.warning("Live analysis requires the processed graph file.")
+    else:
+        node_value = st.number_input(
+            "Graph node index",
             min_value=0,
-            max_value=graph_data.num_nodes - 1,
+            max_value=int(graph_data.num_nodes) - 1,
+            value=int(st.session_state.analysis_node or 0),
             step=1,
-            value=166967,
-            help=(
-                "Internal node index used by the "
-                "processed PyTorch Geometric graph."
-            )
+            help="This is the internal node index in elliptic_graph.pt, not an external transaction hash.",
         )
-
-    with input_col2:
-
-        st.write("")
-        st.write("")
-
-        analyze_button = st.button(
-            "Analyze Transaction",
-            use_container_width=True,
-            type="primary"
-        )
-
-
-    # -----------------------------------------------------
-    # ANALYZE
-    # -----------------------------------------------------
-
-    if analyze_button:
-
-        result = analyze_node(
-            int(node_index),
-            graph_data,
-            probabilities,
-            predictions
-        )
-
-        st.session_state.analysis_result = result
-        st.session_state.analyzed_node = int(
-            node_index
-        )
-
-        # Remove previous explanation if a new node is chosen
-        st.session_state.explanation_result = None
-
-
-    # -----------------------------------------------------
-    # SHOW ANALYSIS
-    # -----------------------------------------------------
-
-    if st.session_state.analysis_result is not None:
-
-        result = st.session_state.analysis_result
-
-        analyzed_node = st.session_state.analyzed_node
-
-        predicted_class = result[
-            "predicted_class"
-        ]
-
-        confidence = result[
-            "confidence"
-        ]
-
-        true_label = result[
-            "true_label"
-        ]
-
-        class_probabilities = result[
-            "class_probabilities"
-        ]
-
-
-        # -------------------------------------------------
-        # LABEL MAPPING
-        # -------------------------------------------------
-
-        label_names = {
-            0: "LICIT",
-            1: "ILLICIT"
-        }
-
-        predicted_label = label_names.get(
-            predicted_class,
-            "UNKNOWN"
-        )
-
-        if true_label is not None:
-
-            actual_label = label_names.get(
-                true_label,
-                "UNKNOWN"
-            )
-
-        else:
-
-            actual_label = "UNKNOWN"
-
-
-        licit_probability = (
-            class_probabilities[0]
-        )
-
-        fraud_probability = (
-            class_probabilities[1]
-        )
-
-
-        # -------------------------------------------------
-        # RISK LEVEL
-        # -------------------------------------------------
-
-        if fraud_probability >= 0.80:
-
-            risk_level = "HIGH RISK"
-
-        elif fraud_probability >= 0.50:
-
-            risk_level = "MEDIUM RISK"
-
-        else:
-
-            risk_level = "LOW RISK"
-
-
-        # -------------------------------------------------
-        # RISK ASSESSMENT
-        # -------------------------------------------------
-
-        st.markdown(
-            """
-<div class="section-title">
-Risk Assessment
-</div>
-            """,
-            unsafe_allow_html=True
-        )
-
-
-        if predicted_class == 1:
-
-            st.markdown(
-                f"""
-<div style="
-    background: linear-gradient(135deg, #2A0D12, #17090C);
-    border: 1px solid #7F1D1D;
-    border-radius: 18px;
-    padding: 28px;
-    margin-bottom: 20px;
-">
-
-<div style="
-    color:#FCA5A5;
-    font-size:0.85rem;
-    font-weight:700;
-    letter-spacing:1px;
-">
-{risk_level}
-</div>
-
-<div style="
-    color:#F87171;
-    font-size:2.2rem;
-    font-weight:800;
-    margin-top:5px;
-">
-⚠ ILLICIT TRANSACTION
-</div>
-
-<div style="
-    color:#CBD5E1;
-    font-size:1rem;
-    margin-top:10px;
-">
-Fraud probability:
-<strong style="color:#F8FAFC;">
-{fraud_probability * 100:.2f}%
-</strong>
-</div>
-
-</div>
-                """,
-                unsafe_allow_html=True
-            )
-
-        else:
-
-            st.markdown(
-                f"""
-<div style="
-    background: linear-gradient(135deg, #0B2317, #07150E);
-    border: 1px solid #166534;
-    border-radius: 18px;
-    padding: 28px;
-    margin-bottom: 20px;
-">
-
-<div style="
-    color:#86EFAC;
-    font-size:0.85rem;
-    font-weight:700;
-    letter-spacing:1px;
-">
-{risk_level}
-</div>
-
-<div style="
-    color:#4ADE80;
-    font-size:2.2rem;
-    font-weight:800;
-    margin-top:5px;
-">
-✓ LICIT TRANSACTION
-</div>
-
-<div style="
-    color:#CBD5E1;
-    font-size:1rem;
-    margin-top:10px;
-">
-Legitimate probability:
-<strong style="color:#F8FAFC;">
-{licit_probability * 100:.2f}%
-</strong>
-</div>
-
-</div>
-                """,
-                unsafe_allow_html=True
-            )
-
-
-        # -------------------------------------------------
-        # METRICS
-        # -------------------------------------------------
-
-        result_col1, result_col2, result_col3 = (
-            st.columns(3)
-        )
-
-        with result_col1:
-
-            st.metric(
-                "Model Prediction",
-                predicted_label
-            )
-
-        with result_col2:
-
-            st.metric(
-                "Confidence",
-                f"{confidence * 100:.2f}%"
-            )
-
-        with result_col3:
-
-            st.metric(
-                "Actual Label",
-                actual_label
-            )
-
-
-        # -------------------------------------------------
-        # PROBABILITIES
-        # -------------------------------------------------
-
-        st.markdown(
-            """
-<div class="section-title">
-Prediction Probabilities
-</div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        prob_col1, prob_col2 = (
-            st.columns(2)
-        )
-
-        with prob_col1:
-
-            st.metric(
-                "Licit Probability",
-                f"{licit_probability * 100:.2f}%"
-            )
-
-        with prob_col2:
-
-            st.metric(
-                "Illicit Probability",
-                f"{fraud_probability * 100:.2f}%"
-            )
-
-
-        # -------------------------------------------------
-        # TRANSACTION INFO
-        # -------------------------------------------------
-
-        st.markdown(
-            """
-<div class="section-title">
-Transaction Information
-</div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        info_col1, info_col2, info_col3 = (
-            st.columns(3)
-        )
-
-        with info_col1:
-
-            st.metric(
-                "Node Index",
-                f"{analyzed_node:,}"
-            )
-
-        with info_col2:
-
-            st.metric(
-                "Input Features",
-                graph_data.x.shape[1]
-            )
-
-        with info_col3:
-
-            st.metric(
-                "Graph Edges",
-                graph_data.edge_index.shape[1]
-            )
-
-
-        # -------------------------------------------------
-        # EXPLANATION SECTION
-        # -------------------------------------------------
-
-        st.markdown(
-            """
-<div class="section-title">
-Explain This Prediction
-</div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        st.markdown(
-            """
-<div class="analyzer-panel">
-
-GNNExplainer analyzes which transaction relationships and
-input features contributed most strongly to the GCN's
-decision for this transaction.
-
-</div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        explain_button = st.button(
-            "Generate GNN Explanation",
-            use_container_width=True
-        )
-
-
-        # -------------------------------------------------
-        # RUN EXPLAINER
-        # -------------------------------------------------
-
-        if explain_button:
-
-            with st.spinner(
-                "GNNExplainer is analyzing the transaction graph..."
-            ):
-
-                explanation = explain_node(
-                    explainer,
-                    graph_data,
-                    int(analyzed_node)
-                )
-
-                top_edges = get_top_edges(
-                    explanation,
-                    graph_data.edge_index,
-                    top_k=20
-                )
-                
-                visualization_edges = (
-                    get_visualization_edges(
-                        explanation,
-                        graph_data.edge_index,
-                        selected_node=int(
-                            analyzed_node
-                        ),
-                        direct_k=5,
-                        additional_k=10
-                    )
-                )
-
-                top_features = get_top_features(
-                    explanation,
-                    int(analyzed_node),
-                    top_k=10,
-                    num_nodes=graph_data.num_nodes
-                )
-
-                important_neighbors = (
-                    get_important_neighbors(
-                        int(analyzed_node),
-                        top_edges,
-                        graph_data,
-                        top_k=5
-                    )
-                )
-
-                st.session_state.explanation_result = {
-                    "top_edges": top_edges,
-                    "top_features": top_features,
-                    "important_neighbors": important_neighbors,
-                    "visualization_edges": visualization_edges
-                }
-
-
-        # -------------------------------------------------
-        # DISPLAY EXPLANATION
-        # -------------------------------------------------
-
-        if (
-            st.session_state.explanation_result
-            is not None
-        ):
-
-            explanation_result = (
-                st.session_state.explanation_result
-            )
-
-            top_edges = explanation_result[
-                "top_edges"
-            ]
-
-            top_features = explanation_result[
-                "top_features"
-            ]
-
-            important_neighbors = (
-                explanation_result[
-                    "important_neighbors"
-                ]
-            )
-            
-            visualization_edges = (
-                explanation_result[
-                    "visualization_edges"
-                ]
-            )
-        
-            # =============================================
-            # LOCAL TRANSACTION NETWORK
-            # =============================================
-
-            st.markdown(
-                """
-<div class="section-title">
-Local Transaction Network
-</div>
-                """,
-                unsafe_allow_html=True
-            )
-
-            st.markdown(
-                """
-<div class="analyzer-panel">
-
-This graph visualizes the most influential transaction
-relationships identified by GNNExplainer.
-
-<strong>Orange</strong> = selected transaction &nbsp;&nbsp;
-<strong>Red</strong> = illicit &nbsp;&nbsp;
-<strong>Green</strong> = licit &nbsp;&nbsp;
-<strong>Gray</strong> = unknown
-
-<br><br>
-
-Thicker edges indicate stronger importance in the
-GNNExplainer explanation.
-
-</div>
-                """,
-                unsafe_allow_html=True
-            )
-
-
-            network = create_local_network(
-                selected_node=int(
-                    analyzed_node
-                ),
-                top_edges=visualization_edges,
-                graph_data=graph_data,
-                max_edges=15
-            )
-
-
-            network_html = network.generate_html()
-
-            components.html(
-                network_html,
-                height=620,
-                scrolling=False
-            )
-            
-            legend_col1, legend_col2, legend_col3, legend_col4 = (
-                st.columns(4)
-            )
-
-            with legend_col1:
-                st.caption("🟠 Selected transaction")
-
-            with legend_col2:
-                st.caption("🔴 Illicit")
-
-            with legend_col3:
-                st.caption("🟢 Licit")
-
-            with legend_col4:
-                st.caption("⚪ Unknown")
-
-
-            # =============================================
-            # IMPORTANT NEIGHBORS
-            # =============================================
-
-            st.markdown(
-                """
-<div class="section-title">
-Influential Neighboring Transactions
-</div>
-                """,
-                unsafe_allow_html=True
-            )
-
-
-            if important_neighbors:
-
-                neighbor_columns = st.columns(
-                    len(
-                        important_neighbors
-                    )
-                )
-
-                for column, neighbor in zip(
-                    neighbor_columns,
-                    important_neighbors
-                ):
-
-                    with column:
-
-                        label = (
-                            neighbor["label"]
-                            if neighbor["label"]
-                            is not None
-                            else "Unknown"
-                        )
-
-                        st.metric(
-                            f"Node {neighbor['node']}",
-                            label,
-                            (
-                                "Importance "
-                                f"{neighbor['importance']:.4f}"
+        if st.button("Analyze with available models", type="primary", use_container_width=True):
+            with st.spinner("Running or reusing cached graph-wide predictions…"):
+                try:
+                    run_model_predictions(int(node_value))
+                    st.session_state.analysis_node = int(node_value)
+                except Exception as exc:
+                    st.error(f"Prediction failed: {type(exc).__name__}: {exc}")
+        node = st.session_state.analysis_node
+        if node is not None and any(key in st.session_state.prediction_cache for key in models):
+            # Refresh node-specific view from cached graph predictions.
+            current = {}
+            cache = st.session_state.prediction_cache
+            for key, bundle in models.items():
+                found = cache.get(key)
+                if found is not None:
+                    current[key] = {
+                        "predicted_class": int(found["predictions"][node].item()),
+                        "fraud_probability": float(found["fraud_probability"][node].item()),
+                        "legitimate_probability": float(found["probabilities"][node, 0].item()),
+                    }
+            if current:
+                st.markdown(f"#### Transaction node {node:,}")
+                cols = st.columns(min(4, len(current)))
+                for col, (key, result) in zip(cols, current.items()):
+                    with col:
+                        with st.container(border=True):
+                            st.markdown(f"**{MODEL_LABELS[key]}**")
+                            predicted = result["predicted_class"]
+                            st.metric("Prediction", CLASS_LABELS.get(predicted, "Unknown"))
+                            st.metric("Fraud probability", f"{result['fraud_probability'] * 100:.2f}%")
+                            if key == "Ensemble":
+                                st.caption(f"Recorded decision threshold: {models[key].threshold:.2f}")
+                st.markdown("#### Cross-model comparison")
+                comparison = pd.DataFrame([
+                    {
+                        "Model": MODEL_LABELS[key],
+                        "Prediction": CLASS_LABELS.get(value["predicted_class"], "Unknown"),
+                        "Fraud probability": value["fraud_probability"],
+                        "Legitimate probability": value["legitimate_probability"],
+                    }
+                    for key, value in current.items()
+                ])
+                st.dataframe(comparison, use_container_width=True, hide_index=True)
+                if len({v["predicted_class"] for v in current.values()}) > 1:
+                    st.warning("Models disagree on this node. Treat this as a signal for further review, not proof of fraud or a calibrated uncertainty estimate.")
+                if hasattr(graph_data, "y"):
+                    actual = int(graph_data.y[node].item())
+                    if actual in (0, 1):
+                        st.caption(f"Recorded label: {CLASS_LABELS[actual]}. This label is distinct from each model's prediction.")
+                    else:
+                        st.caption("Recorded label: Unknown / unlabeled. The model prediction is not ground truth.")
+                st.markdown("#### Explain the selected model")
+                available = list(current.keys())
+                default = "GraphSAGE" if "GraphSAGE" in available else available[0]
+                selected_model = st.selectbox("Model to explain", available, index=available.index(default))
+                epochs = st.slider("GNNExplainer optimization epochs", min_value=20, max_value=150, value=50, step=10)
+                if st.button("Generate local explanation", use_container_width=True):
+                    with st.spinner("Optimizing a local GNN explanation…"):
+                        try:
+                            explanation = get_explanation(int(node), selected_model, int(epochs))
+                            st.session_state["active_explanation"] = {
+                                "node": int(node), "model": selected_model, "epochs": int(epochs),
+                                "result": explanation,
+                            }
+                        except Exception as exc:
+                            st.error(f"Explanation failed: {type(exc).__name__}: {exc}")
+                active = st.session_state.get("active_explanation")
+                if active and active["node"] == node and active["model"] == selected_model:
+                    ex = active["result"]
+                    if ex["visualization_edges"]:
+                        try:
+                            network = create_local_network(
+                                selected_node=int(node), top_edges=ex["visualization_edges"],
+                                graph_data=graph_data, max_edges=20,
                             )
-                        )
+                            components.html(network.generate_html(), height=560, scrolling=False)
+                        except Exception as exc:
+                            st.warning(f"Graph rendering failed: {type(exc).__name__}: {exc}")
+                    if ex["top_features"]:
+                        st.markdown("**Top-ranked feature indices**")
+                        features = pd.DataFrame(ex["top_features"]).rename(columns={"feature": "Feature index", "importance": "Mask importance"})
+                        features["Feature"] = features["Feature index"].map(lambda x: f"Feature {x}")
+                        st.bar_chart(features.set_index("Feature")[["Mask importance"]], horizontal=True)
+                        st.caption("Feature columns are anonymous indices; semantic meanings are not inferred.")
+                    if ex["neighbors"]:
+                        st.markdown("**Influential neighboring transactions**")
+                        st.dataframe(pd.DataFrame(ex["neighbors"]), use_container_width=True, hide_index=True)
 
-            else:
-
-                st.info(
-                    "No directly connected influential "
-                    "neighbors were found among the "
-                    "highest-ranked edges."
-                )
-
-
-            # =============================================
-            # IMPORTANT EDGES
-            # =============================================
-
-            st.markdown(
-                """
-<div class="section-title">
-Most Influential Graph Connections
-</div>
-                """,
-                unsafe_allow_html=True
-            )
-
-
-            edge_data = []
-
-            for rank, edge in enumerate(
-                top_edges[:10],
-                start=1
-            ):
-
-                edge_data.append(
-                    {
-                        "Rank": rank,
-                        "Source Node": edge[
-                            "source"
-                        ],
-                        "Target Node": edge[
-                            "target"
-                        ],
-                        "Importance": round(
-                            edge[
-                                "importance"
-                            ],
-                            4
-                        )
-                    }
-                )
-
-
-            edge_df = pd.DataFrame(
-                edge_data
-            )
-
-            st.dataframe(
-                edge_df,
-                use_container_width=True,
-                hide_index=True
-            )
-
-
-            # =============================================
-            # FEATURES
-            # =============================================
-
-            st.markdown(
-                """
-<div class="section-title">
-Top Influential Features
-</div>
-                """,
-                unsafe_allow_html=True
-            )
-
-
-            feature_data = []
-
-            for feature in top_features:
-
-                feature_data.append(
-                    {
-                        "Feature": (
-                            f"Feature "
-                            f"{feature['feature']}"
-                        ),
-                        "Importance": (
-                            feature[
-                                "importance"
-                            ]
-                        )
-                    }
-                )
-
-
-            feature_df = pd.DataFrame(
-                feature_data
-            )
-
-
-            feature_df = (
-                feature_df
-                .sort_values(
-                    "Importance",
-                    ascending=True
-                )
-            )
-
-
-            st.bar_chart(
-                feature_df,
-                x="Feature",
-                y="Importance",
-                horizontal=True,
-                use_container_width=True
-            )
-
-
-            # =============================================
-            # EXPLANATION SUMMARY
-            # =============================================
-
-            if (
-                important_neighbors
-                and top_features
-            ):
-
-                strongest_neighbor = (
-                    important_neighbors[0]
-                )
-
-                strongest_feature = max(
-                    top_features,
-                    key=lambda x:
-                    x["importance"]
-                )
-
-                st.markdown(
-                    """
-<div class="section-title">
-Explanation Summary
-</div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-                st.info(
-                    f"""
-For **Node {analyzed_node}**, GNNExplainer identified
-**Node {strongest_neighbor['node']}** as one of the most
-influential directly connected transactions.
-
-The strongest identified transaction attribute was
-**Feature {strongest_feature['feature']}**.
-
-These graph relationships and transaction attributes
-contributed most strongly to the GCN's prediction for
-this node.
-                    """
-                )
-
-
-# =========================================================
-# MODEL PERFORMANCE
-# =========================================================
 
 elif page == "Model Performance":
-
-    st.markdown(
-        """
-<div class="section-title">
-GCN Model Performance
-</div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        """
-<div class="analyzer-panel">
-
-This section will show the evaluation results of your
-trained GCN model.
-
-The focus will be on fraud-detection metrics rather than
-accuracy alone.
-
-</div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    col1, col2, col3, col4 = (
-        st.columns(4)
-    )
-
-    with col1:
-
-        st.metric(
-            "Accuracy",
-            "Pending"
+    st.markdown("### Model performance")
+    st.write("Compare saved test-set evaluation artifacts. Metrics are not recalculated from live dashboard predictions.")
+    frame = recorded_frame(recorded_metrics)
+    if frame.empty:
+        st.info("No recorded metrics are available.")
+    else:
+        metric_choice = st.selectbox(
+            "Metric to compare",
+            ["Fraud F1", "Fraud precision", "Fraud recall", "Accuracy", "PR-AUC (AP)", "ROC-AUC"],
+        )
+        metric_column = {
+            "Fraud F1": "Fraud F1", "Fraud precision": "Fraud precision",
+            "Fraud recall": "Fraud recall", "Accuracy": "Accuracy",
+            "PR-AUC (AP)": "PR-AUC (AP)", "ROC-AUC": "ROC-AUC",
+        }[metric_choice]
+        chart = frame[["Model", metric_column]].dropna().set_index("Model")
+        if not chart.empty:
+            st.bar_chart(chart, use_container_width=True)
+        st.dataframe(frame, use_container_width=True, hide_index=True)
+        st.caption("For this imbalanced dataset, inspect fraud precision, recall, F1, and PR-AUC alongside accuracy.")
+    selected = st.selectbox("Inspect evaluation artifacts", MODEL_ORDER, index=1)
+    metric_data = recorded_metrics.get(selected)
+    if metric_data and metric_data.get("confusion_matrix"):
+        st.markdown("#### Recorded confusion matrix")
+        cm = pd.DataFrame(
+            metric_data["confusion_matrix"],
+            index=["Actual legitimate", "Actual fraud"],
+            columns=["Predicted legitimate", "Predicted fraud"],
+        )
+        st.dataframe(cm, use_container_width=True)
+    images = available_artifacts(PROJECT_ROOT, selected)
+    if images:
+        st.markdown("#### Available experiment plots")
+        for label, path in images:
+            with st.expander(label, expanded=(label == "Confusion matrix")):
+                st.image(str(path), caption=f"Recorded artifact · {path.relative_to(PROJECT_ROOT).as_posix()}", use_container_width=True)
+    else:
+        st.info("No generated plot files for this model were found locally.")
+    if selected == "Ensemble" and metric_data:
+        st.warning(
+            f"Recorded ensemble selection: GraphSAGE weight α={metric_data.get('alpha_graphsage')}, "
+            f"GAT weight α={metric_data.get('alpha_gat')}, threshold={metric_data.get('threshold')}. "
+            "The saved configuration assigns all probability weight to GraphSAGE, so this run is a degenerate blend rather than evidence that combining both models improved performance."
         )
 
-    with col2:
-
-        st.metric(
-            "Precision",
-            "Pending"
-        )
-
-    with col3:
-
-        st.metric(
-            "Recall",
-            "Pending"
-        )
-
-    with col4:
-
-        st.metric(
-            "F1 Score",
-            "Pending"
-        )
-
-    st.info(
-        """
-Next we can replace these placeholders with the exact
-metrics produced by your trained GCN and add the confusion
-matrix.
-        """
-    )
-
-
-# =========================================================
-# EXPLAINABILITY PAGE
-# =========================================================
 
 elif page == "Explainability":
-
-    st.markdown(
-        """
-<div class="section-title">
-GNNExplainer
-</div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        """
-<div class="analyzer-panel">
-
-<strong>Explainable AI Layer</strong>
-
-<br><br>
-
-GNNExplainer identifies which graph relationships and
-node attributes influenced the GCN's prediction.
-
-This gives the fraud-detection model a local explanation
-layer instead of presenting predictions as a black box.
-
-</div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-
-        st.markdown(
-            """
-<div class="dashboard-card">
-
-<div class="card-icon">
-⌁
-</div>
-
-<div class="card-label">
-GRAPH EXPLANATION
-</div>
-
-<div class="card-number">
-Edges
-</div>
-
-<div class="card-detail">
-Important neighboring transactions and graph connections
-are identified using edge importance masks.
-</div>
-
-</div>
-            """,
-            unsafe_allow_html=True
+    st.markdown("### Explainability lab")
+    st.write("Explore a node's local explanation and compare feature/edge masks across available models. Explanation masks describe model behavior; they are not causal proof.")
+    if graph_data is None or not models:
+        st.warning("The graph and at least one valid model checkpoint are required for live explanations.")
+    else:
+        default_node = int(st.session_state.analysis_node or 0)
+        node = st.number_input(
+            "Transaction node index",
+            min_value=0, max_value=int(graph_data.num_nodes) - 1, value=default_node, step=1,
+            key="xai_node",
         )
-
-    with col2:
-
-        st.markdown(
-            """
-<div class="dashboard-card">
-
-<div class="card-icon">
-▥
-</div>
-
-<div class="card-label">
-FEATURE EXPLANATION
-</div>
-
-<div class="card-number">
-Features
-</div>
-
-<div class="card-detail">
-Important transaction attributes are identified using
-feature importance masks.
-</div>
-
-</div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    st.write("")
-
-    st.info(
-        """
-Use the **Transaction Analyzer** page to select a node,
-run the GCN prediction, and generate its local GNNExplainer
-explanation.
-        """
-    )
+        selected_model = st.selectbox("Model", list(models.keys()), index=0, key="xai_model")
+        epochs = st.slider("Explanation optimization epochs", min_value=20, max_value=150, value=50, step=10, key="xai_epochs")
+        explain_col, compare_col = st.columns(2)
+        with explain_col:
+            generate_one = st.button("Explore this explanation", type="primary", use_container_width=True)
+        with compare_col:
+            generate_compare = st.button("Compare available models", use_container_width=True)
+        if generate_one:
+            with st.spinner(f"Generating {MODEL_LABELS[selected_model]} explanation…"):
+                try:
+                    result = get_explanation(int(node), selected_model, int(epochs))
+                    st.session_state["xai_active"] = {
+                        "node": int(node), "model": selected_model, "epochs": int(epochs), "result": result
+                    }
+                except Exception as exc:
+                    st.error(f"Explanation failed: {type(exc).__name__}: {exc}")
+        if generate_compare:
+            results = {}
+            progress = st.progress(0, text="Preparing cross-model explanations…")
+            keys = list(models.keys())
+            for index, key in enumerate(keys):
+                try:
+                    results[key] = get_explanation(int(node), key, int(epochs))
+                except Exception as exc:
+                    results[key] = {"error": f"{type(exc).__name__}: {exc}"}
+                progress.progress((index + 1) / len(keys), text=f"Explained {index + 1} of {len(keys)} models")
+            progress.empty()
+            st.session_state["xai_comparison"] = {"node": int(node), "epochs": int(epochs), "results": results}
+        active = st.session_state.get("xai_active")
+        if active and active["node"] == int(node):
+            ex = active["result"]
+            st.markdown(f"#### {MODEL_LABELS[active['model']]} · node {node}")
+            left, right = st.columns([1.45, 1])
+            with left:
+                st.markdown("**Local graph evidence**")
+                if ex["visualization_edges"]:
+                    try:
+                        network = create_local_network(
+                            selected_node=int(node), top_edges=ex["visualization_edges"],
+                            graph_data=graph_data, max_edges=25,
+                        )
+                        components.html(network.generate_html(), height=650, scrolling=False)
+                    except Exception as exc:
+                        st.warning(f"Graph rendering failed: {type(exc).__name__}: {exc}")
+                else:
+                    st.info("No important edges were returned for this explanation.")
+            with right:
+                st.markdown("**Feature explorer**")
+                if ex["top_features"]:
+                    features = pd.DataFrame(ex["top_features"]).rename(columns={"feature": "Feature index", "importance": "Mask importance"})
+                    features["Feature"] = features["Feature index"].map(lambda x: f"Feature {x}")
+                    st.bar_chart(features.set_index("Feature")[["Mask importance"]], horizontal=True)
+                    st.dataframe(features[["Feature index", "Mask importance"]], hide_index=True, use_container_width=True)
+                    st.caption("Feature indices are shown because the dataset's feature-name mapping is not assumed.")
+                else:
+                    st.info("No feature mask was returned.")
+            with st.expander("Ranked edge evidence"):
+                st.dataframe(pd.DataFrame(ex["top_edges"]), use_container_width=True, hide_index=True)
+            with st.expander("Influential neighbors"):
+                st.dataframe(pd.DataFrame(ex["neighbors"]), use_container_width=True, hide_index=True)
+            st.info(
+                "Interpretation: the listed feature and edge masks identify components the explainer found useful for this model's local prediction. "
+                "They do not establish causation, and GAT attention coefficients are not interchangeable with GNNExplainer masks."
+            )
+        comparison = st.session_state.get("xai_comparison")
+        if comparison and comparison["node"] == int(node):
+            st.markdown("#### Cross-model explanation comparison")
+            rows = []
+            for key, result in comparison["results"].items():
+                if "error" in result:
+                    rows.append({"Model": MODEL_LABELS[key], "Status": result["error"], "Top feature indices": "", "Top edge count": 0})
+                    continue
+                rows.append({
+                    "Model": MODEL_LABELS[key],
+                    "Status": "Ready",
+                    "Top feature indices": ", ".join(str(x["feature"]) for x in result["top_features"][:5]),
+                    "Top edge count": len(result["top_edges"]),
+                    "Top neighbor indices": ", ".join(str(x["node"]) for x in result["neighbors"][:5]),
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.caption("Feature/edge rankings can differ across models; compare them as model-specific evidence, not as a single ground-truth explanation.")
